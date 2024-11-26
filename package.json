@@ -21,6 +21,11 @@
       {
         "command": "youtube-player.helloWorld",
         "title": "Hello World"
+      },
+      {
+        "command": "youtubePlayer.addVideo",
+        "title": "Add YouTube Video",
+        "icon": "$(add)"
       }
     ],
     "views": {
@@ -29,6 +34,15 @@
           "id": "youtubePlayerView",
           "name": "YouTube Player",
           "type": "webview"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "youtubePlayer.addVideo",
+          "when": "view == youtubePlayerView",
+          "group": "navigation"
         }
       ]
     }

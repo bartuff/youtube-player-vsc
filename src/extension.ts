@@ -14,6 +14,13 @@ export function activate(context: vscode.ExtensionContext) {
       provider
     )
   );
+
+  // Registrar el comando para añadir video
+  context.subscriptions.push(
+    vscode.commands.registerCommand("youtubePlayer.addVideo", () => {
+      provider.addVideo();
+    })
+  );
 }
 
 // This method is called when your extension is deactivated
