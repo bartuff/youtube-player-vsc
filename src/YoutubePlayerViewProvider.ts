@@ -3,8 +3,15 @@ import * as vscode from "vscode";
 export class YoutubePlayerViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewType = "youtubePlayerView";
   private _view?: vscode.WebviewView;
+  private _currentVideoId: string = "";
 
-  constructor(private readonly _extensionUri: vscode.Uri) {}
+  constructor(
+    private readonly _extensionUri: vscode.Uri,
+    private readonly _storage: vscode.Memento
+  ) {
+    // Recuperar el último video reproducido
+    this._currentVideoId = this._storage.get("lastVideoId", "");
+  }
 
   public resolveWebviewView(
     webviewView: vscode.WebviewView,
@@ -18,9 +25,16 @@ export class YoutubePlayerViewProvider implements vscode.WebviewViewProvider {
       localResourceRoots: [this._extensionUri],
     };
 
+    webviewView.description = "YouTube Player";
+    webviewView.title = "YouTube Player";
     webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
 
-    // Manejar mensajes desde el webview
+    if (this._currentVideoId) {
+      setTimeout(() => {
+        this._loadVideo(this._currentVideoId);
+      }, 1000);
+    }
+
     webviewView.webview.onDidReceiveMessage((message) => {
       switch (message.command) {
         case "loadVideo":
@@ -52,6 +66,8 @@ export class YoutubePlayerViewProvider implements vscode.WebviewViewProvider {
 
   private _loadVideo(videoId: string) {
     if (this._view) {
+      this._currentVideoId = videoId;
+      this._storage.update("lastVideoId", videoId);
       this._view.webview.postMessage({ command: "loadVideo", videoId });
     }
   }
@@ -85,35 +101,93 @@ export class YoutubePlayerViewProvider implements vscode.WebviewViewProvider {
                     height: 100vh;
                     position: relative;
                 }
-
-                #player iframe {
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    width: 100%;
-                    height: 100%;
-                    border: none;
-                }
             </style>
+            <script src="https://www.youtube.com/iframe_api"></script>
         </head>
         <body>
-            <div id="player">
-                <iframe
-                    src="https://www.youtube.com/embed/"
-                    frameborder="0"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                    allowfullscreen>
-                </iframe>
-            </div>
+            <div id="player"></div>
             <script>
                 const vscode = acquireVsCodeApi();
+                let player;
+                let currentVideoId = '${this._currentVideoId}';
+                let currentTime = 0;
+                let isPlaying = false;
+
+                // Inicializar el reproductor de YouTube
+                function onYouTubeIframeAPIReady() {
+                    player = new YT.Player('player', {
+                        height: '100%',
+                        width: '100%',
+                        videoId: currentVideoId,
+                        playerVars: {
+                            'autoplay': 1,
+                            'enablejsapi': 1,
+                            'modestbranding': 1,
+                            'playsinline': 1,
+                            'rel': 0
+                        },
+                        events: {
+                            'onReady': onPlayerReady,
+                            'onStateChange': onPlayerStateChange
+                        }
+                    });
+                }
+
+                function onPlayerReady(event) {
+                    // Restaurar estado previo
+                    const previousState = vscode.getState();
+                    if (previousState) {
+                        if (previousState.videoId) {
+                            currentVideoId = previousState.videoId;
+                            if (previousState.currentTime) {
+                                currentTime = previousState.currentTime;
+                                event.target.seekTo(currentTime);
+                            }
+                            if (previousState.isPlaying) {
+                                event.target.playVideo();
+                            }
+                        }
+                    }
+                }
+
+                function onPlayerStateChange(event) {
+                    isPlaying = event.data === YT.PlayerState.PLAYING;
+                    if (player && player.getCurrentTime) {
+                        currentTime = player.getCurrentTime();
+                    }
+                    // Guardar estado
+                    vscode.setState({
+                        videoId: currentVideoId,
+                        currentTime: currentTime,
+                        isPlaying: isPlaying
+                    });
+                }
+
+                // Guardar estado periódicamente
+                setInterval(() => {
+                    if (player && player.getCurrentTime) {
+                        currentTime = player.getCurrentTime();
+                        vscode.setState({
+                            videoId: currentVideoId,
+                            currentTime: currentTime,
+                            isPlaying: isPlaying
+                        });
+                    }
+                }, 1000);
 
                 window.addEventListener('message', event => {
                     const message = event.data;
                     switch (message.command) {
                         case 'loadVideo':
-                            const iframe = document.querySelector('iframe');
-                            iframe.src = 'https://www.youtube.com/embed/' + message.videoId;
+                            currentVideoId = message.videoId;
+                            if (player && player.loadVideoById) {
+                                player.loadVideoById(currentVideoId);
+                            }
+                            vscode.setState({
+                                videoId: currentVideoId,
+                                currentTime: 0,
+                                isPlaying: true
+                            });
                             break;
                     }
                 });
